@@ -1,0 +1,325 @@
+<!DOCTYPE html><html lang="en"><head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Assessment AI risk calculator</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Lato:ital,wght@0,100;0,300;0,400;0,700;0,900;1,100;1,300;1,400;1,700;1,900&display=swap" rel="stylesheet">  
+  <link rel="stylesheet" href="https://code.jquery.com/ui/1.14.1/themes/base/jquery-ui.css">
+  <script src="https://code.jquery.com/jquery-3.7.1.js"></script>
+  <script src="https://code.jquery.com/ui/1.14.1/jquery-ui.js"></script>
+  <script>
+  $( function() {
+      // Helper functions
+      function interpolate(color1, color2, percent) {
+        // Convert the hex colors to RGB values
+        const r1 = parseInt(color1.substring(1, 3), 16);
+        const g1 = parseInt(color1.substring(3, 5), 16);
+        const b1 = parseInt(color1.substring(5, 7), 16);
+
+        const r2 = parseInt(color2.substring(1, 3), 16);
+        const g2 = parseInt(color2.substring(3, 5), 16);
+        const b2 = parseInt(color2.substring(5, 7), 16);
+
+        // Interpolate the RGB values
+        const r = Math.round(r1 + (r2 - r1) * percent);
+        const g = Math.round(g1 + (g2 - g1) * percent);
+        const b = Math.round(b1 + (b2 - b1) * percent);
+
+        // Convert the interpolated RGB values back to a hex color
+        return "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
+      }
+
+      // Recompute score
+      function recompute(event=null, ui=null) {
+        // Get spinner values
+        var importance = $("#importance").val();
+
+        // Get radio group values
+        var ai_mark = $("#ai-mark").find("input[type=radio]:checked").val();
+        var type = $('#type').find("input[type=radio]:checked").val();
+        var context = $('#context').find("input[type=radio]:checked").val();
+        var conditions = $('#conditions').find("input[type=radio]:checked").val();
+        var invigilation = $('#invigilation').find("input[type=radio]:checked").val();
+        console.log(ai_mark, type, context, invigilation);
+
+        // Check whether all values have been set
+        var values = [importance, ai_mark, type, context, conditions, invigilation];
+        console.log(values);
+        var all_defined = values.map(x => x!==undefined).every(Boolean);
+        
+        var risk_section = $('#sec-score');
+        var risk_score_field = $('#risk-score');
+        var risk_text_field = $('#risk-text');
+        if (!all_defined) {
+          risk_score_field.html("-/5");
+          risk_score_field.addClass('undefined');
+          return;
+        }
+
+        importance = parseInt(importance);
+        ai_mark = parseInt(ai_mark);
+        type = parseInt(type);
+        context = parseInt(context);
+        conditions = parseInt(conditions);
+        invigilation = parseInt(invigilation);
+
+        var importance_score = importance/100;
+        var competence_score = (ai_mark+type+context-3)/12;
+        var abuse_score = (2*invigilation + conditions-3)/12;
+
+        var debug_field = $("#debug");
+        debug_field.html(`${importance_score.toFixed(3)} * ${competence_score.toFixed(3)} * ${abuse_score.toFixed(3)}`)
+
+        var score = 5*Math.pow(importance_score*competence_score*abuse_score,1/3);
+        var category = "Low";
+        var colour_bg = "#5CB56E";
+        if (score >= 4) {
+          category = "High";
+          colour_bg = "#FF7A75";          
+        } else if (score >= 3) {
+          category = "Medium";
+          colour_bg = "#F9FCA2"
+        }
+
+        var integral = Math.trunc( score );
+        var decimals = String((score-integral).toFixed(2));
+        decimals = decimals.slice(decimals.indexOf('.')+1);
+
+
+        // Update score, text and colours
+        risk_text_field.html(category);
+        risk_score_field.html(`<span class="integer">${integral}</span>.<span class="decimals">${decimals}</span>`);
+        risk_score_field.removeClass('undefined');
+
+        risk_section.css("background-color", colour_bg)
+      }
+
+      // Set up spinners
+      $( "#importance" ).spinner({
+        min: 0, max: 100, step: 5, stop: recompute
+      });
+
+      // Set up radio groups by parsing data from <fieldset> tags
+      for (const name of ['type', 'context', 'invigilation', 'conditions', 'ai-mark']) {
+        const tag = `#${name}`;
+        $( tag ).html(function() {
+          var data = $(this).html();
+          data = data.split(/\r?\n/).map(s => s.trim()).filter(s => s.length > 0);
+          data = data.map(s => s.split("|")).map(([label,cost]) => [label,parseInt(cost)]);
+          var elems = data.map(([label,cost]) => 
+            `<label for="${label}">${label}</label>\n
+              <input type="radio" name="${name}" id="${label}" value="${cost}">`);
+          // For debugging: check some element
+          // TODO: remove
+          elems[1] = elems[1].slice(0,-1) + ' checked="">';
+          return elems.join("\n");
+        });
+        $( tag ).controlgroup();
+        $( tag ).children("input")
+          .each(function(){
+            $(this).checkboxradio("option", "icon", false);
+          })
+          .change(function() {
+            recompute();
+          });
+      }
+
+      recompute();
+  } );
+  </script>
+  <style>
+    html {
+      font-family: Lato;
+      color: #333;
+      background-color: #fcfcfc;
+    }
+
+    #content {
+      width: 800px;
+      margin: 50px auto;
+      display: grid;
+      gap: 10px;
+      grid-template-columns: 50% 50%;
+      grid-template-rows: auto;
+      grid-template-areas: 
+        "A B"
+        "C C"
+        "D D"
+    }
+
+    #sec-importance { grid-area: A; }
+    #sec-score      { grid-area: B; }
+    #sec-competence { grid-area: C; }
+    #sec-abuse      { grid-area: D; }
+
+    #sec-abuse .flex {
+      display: flex;
+    }
+
+    #sec-competence .grid {
+      display: grid; 
+      grid-template-columns: 50% 50%;
+      grid-template-rows: auto;
+      grid-template-areas: 
+        "A A"
+        "B B"
+        "C C"
+    }
+
+    #subsec-quality { grid-area: A; }
+    #subsec-type { grid-area: C;}
+    #subsec-context { grid-area: B; }
+
+    fieldset { 
+      border: 0; 
+      padding: 5px 0px;
+    }
+    #subsec-type fieldset {
+      display: grid;
+      grid-template-columns: 25% 25% 25% 25%;
+      grid-template-rows: auto;
+    }
+    /* Remove psuedo-element added by JQueryUI */
+    #subsec-type fieldset:before {
+      content: none !important;
+    }
+
+    section h2 {
+      margin: 0;
+      font-size: 1.8em;
+      font-weight: 400;
+    }
+
+    section h3 {
+      margin-bottom: 0;
+      padding-bottom: 0;
+      font-size: 1.2em;
+      font-weight: 500;
+    }
+
+    section {
+      border-radius: 5px;
+      padding: 10px 20px;
+      box-shadow: rgba(0, 0, 0, 0.24) 0px 3px 8px;
+    }
+
+    /* Individual sections */
+    #sec-importance input {
+       display: block;
+       width: 80px; 
+       font-size: 1.5em;
+    }
+    #sec-importance span.perc { font-size: 1.5em; }
+    #sec-importance label {
+      display: block;
+    }
+
+    #sec-score { 
+      text-align: right; 
+      background-color: #cdd;
+    }
+    #sec-score h2 { text-align: right; }
+    #risk-text { font-size: 3em; margin-right: .5em; } 
+    #risk-score { font-size: 4em; } 
+    #risk-score .decimals { font-size: .5em; }
+
+    /* JQueryUI specific elements */
+    .ui-button {
+      text-align: left;
+      font-size: 0.9em;
+      padding: 8px;
+    }
+  </style>
+</head>
+<body>
+  <div id="content">
+    <section id="sec-importance">
+      <h2>Importance</h2>    
+        <label for="importance">Assessment weighting:</label>
+        <input id="importance" name="importance" value="100">
+        <span class="perc">%</span>
+    </section>
+
+    <section id="sec-score">
+      <h2>Risk score</h2>
+      <div id="debug">--</div>
+      <span id="risk-text"></span><span class="undefined" id="risk-score">
+        XX
+      </span> 
+    </section>    
+   
+    <section id="sec-competence">
+      <h2>AI competence</h2>
+      <div class="grid">
+        <div id="subsec-quality">
+          <h3>Quality of AI output</h3>
+          <fieldset id="ai-mark">
+            Very poor / < 20 / fail | 1
+            Poor – mark 20 – 30 | 2
+            Ok – mark 30 to 49 | 3
+            Good – 40 to 49 | 4
+            Very good – 50+ | 5 
+          </fieldset>  
+        </div>
+
+        <div id="subsec-type">
+          <h3>Assessment Type</h3>
+          <fieldset id="type">
+            CW: Coursework  | 5
+            PJ: Project | 5
+            DS: Dissertation  | 5
+            AT: attendance | 1
+            FW: fieldwork  | 3
+            PR: practical  | 1
+            EXAM |  1
+            HOME EXAM | 5
+            TS: Test | 3
+            PTS: Paper test | 1
+            CTS: Class computer test |  2
+            OTS: Online test | 4
+            PT: presentation | 3
+          </fieldset>
+        </div>
+
+        <div id="subsec-context">
+          <h3>Context</h3>
+          <fieldset id="context">
+            Real-world work | 1
+            Specialist work area | 2
+            Scenario/case study |  3
+            Niche subject/topic |  4
+            Common subject/topic | 5
+          </fieldset>
+        </div>
+      </div>
+    </section>      
+
+    <section id="sec-abuse">
+      <h2>AI abuse risk</h2>
+      <div class="flex">
+        <div>
+          <h3>Conditions</h3>
+          <fieldset id="conditions">
+            Fully in-person | 1
+            Small amount of prep at home, completed in-person | 2
+            Some amount of prep at home, completed in-person | 3
+            Most prep at home, completed in-person | 4
+            Fully at home | 5
+          </fieldset>  
+        </div>
+
+        <div>
+          <h3>Invigilation</h3>
+          <fieldset id="invigilation">
+            Fully invigilated under formal assessment conditions | 1
+            Fully monitored / supervised without formal conditions | 2
+            Monitored, but with not enough staff per students | 3
+            Set up is checked, but no formal supervision during the assessment | 4
+            No invigilation / monitoring / supervision | 5
+          </fieldset>
+        </div>
+      </div>
+    </section>
+  </div>
+</body></html>
