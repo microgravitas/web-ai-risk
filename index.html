@@ -10,6 +10,17 @@
   <script src="https://code.jquery.com/ui/1.14.1/jquery-ui.js"></script>
   <script>
   $( function() {
+      // Basic data
+      // We convert assessment weighting to "importance" using the following
+      // data. The last entry is a sentry element.
+      const importance_curve = [0, 2, 8, 25, 53, 75, 87, 94, 97, 99, 100, 100]
+      const css_risk_classes = ["risk1", "risk2", "risk3", "risk4", "risk5"];
+
+      // Add ui elements
+      $('#sec-importance').prepend('<div class="indicator">XX</div>')
+      $('#sec-competence').prepend('<div class="indicator">XX</div>')
+      $('#sec-abuse').prepend('<div class="indicator">XX</div>')
+
       // Helper functions
       function interpolate(color1, color2, percent) {
         // Convert the hex colors to RGB values
@@ -28,6 +39,14 @@
 
         // Convert the interpolated RGB values back to a hex color
         return "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
+      }
+
+      function pretty_decimal(value) {
+        var integral = Math.trunc( value );
+        var decimals = String((value-integral).toFixed(2));
+        decimals = decimals.slice(decimals.indexOf('.')+1);
+
+        return `<span class="integer">${integral}</span>.<span class="decimals">${decimals}</span>`;
       }
 
       // Recompute score
@@ -64,36 +83,43 @@
         conditions = parseInt(conditions);
         invigilation = parseInt(invigilation);
 
-        var importance_score = importance/100;
+
+        // Compute importance by linear interpolation of values in 
+        // importance_score
+        var ix = Math.floor(importance / 10);
+        var res = (importance - 10*ix)/10;
+
+        var importance_score = (importance_curve[ix]*(1-res)+importance_curve[ix+1]*res) / 100; 
         var competence_score = (ai_mark+type+context-3)/12;
         var abuse_score = (2*invigilation + conditions-3)/12;
 
-        var debug_field = $("#debug");
-        debug_field.html(`${importance_score.toFixed(3)} * ${competence_score.toFixed(3)} * ${abuse_score.toFixed(3)}`)
+        // Update indicators
+        for([name, score] of [["importance", importance_score], ["competence", competence_score], ["abuse", abuse_score]]) {
+          $("div.indicator", `#sec-${name}`)
+              .html(pretty_decimal(5*score))
+              .removeClass(css_risk_classes)
+              .addClass(`risk${Math.floor(5*score)}`);                   
+        }
 
         var score = 5*Math.pow(importance_score*competence_score*abuse_score,1/3);
         var category = "Low";
-        var colour_bg = "#5CB56E";
+        var css_class = `risk${Math.floor(score)}`;
         if (score >= 4) {
-          category = "High";
-          colour_bg = "#FF7A75";          
+          category = "High"
         } else if (score >= 3) {
           category = "Medium";
-          colour_bg = "#F9FCA2"
         }
-        
-
         var integral = Math.trunc( score );
         var decimals = String((score-integral).toFixed(2));
         decimals = decimals.slice(decimals.indexOf('.')+1);
 
-
         // Update score, text and colours
         risk_text_field.html(category);
-        risk_score_field.html(`<span class="integer">${integral}</span>.<span class="decimals">${decimals}</span>`);
+        risk_score_field.html(pretty_decimal(score));
         risk_score_field.removeClass('undefined');
 
-        risk_section.css("background-color", colour_bg)
+        risk_section.removeClass(css_risk_classes)
+        risk_section.addClass(css_class);
       }
 
       // Set up spinners
@@ -109,8 +135,8 @@
           data = data.split(/\r?\n/).map(s => s.trim()).filter(s => s.length > 0);
           data = data.map(s => s.split("|")).map(([label,cost]) => [label,parseInt(cost)]);
           var elems = data.map(([label,cost]) => 
-            `<label for="${label}">${label}</label>\n
-              <input type="radio" name="${name}" id="${label}" value="${cost}">`);
+            `<label for="${label}" class="risk${cost}">${label}</label>\n
+              <input type="radio" name="${name}" id="${label}" value="${cost}" class="risk${cost}">`);
           // For debugging: check some element
           // TODO: remove
           elems[1] = elems[1].slice(0,-1) + ' checked="">';
@@ -130,10 +156,18 @@
   } );
   </script>
   <style>
+    :root {
+      --risk1: #5cb56e;
+      --risk2: #a2d585;
+      --risk3: #f9fca2;
+      --risk4: #fcc38e;
+      --risk5: #ff7a75;
+    }
+
     html {
       font-family: Lato;
       color: #333;
-      background-color: #fcfcfc;
+      background-color: #eee;
     }
 
     #content {
@@ -153,6 +187,9 @@
     #sec-score      { grid-area: B; }
     #sec-competence { grid-area: C; }
     #sec-abuse      { grid-area: D; }
+    #sec-importance, #sec-score, #sec-competence, #sec-abuse {
+       background-color: #fcfcfc;
+    }
 
     #sec-abuse .flex {
       display: flex;
@@ -171,6 +208,28 @@
     #subsec-quality { grid-area: A; }
     #subsec-type { grid-area: C;}
     #subsec-context { grid-area: B; }
+
+    div.indicator {
+      float: right;
+      font-size: 1.33em;
+      background-color: #eee;
+      border-radius: 50%;
+      text-align: center;
+      line-height: 40px;
+      width: 40px;
+      height: 40px;
+      padding: 5px;
+      position: relative;
+      right: -10px;
+      border: 3px solid var(--risk1);
+      margin-left: -40px;
+    }
+
+    div.indicator.risk1 {border-color: var(--risk1) !important;}
+    div.indicator.risk2 {border-color: var(--risk2) !important;}
+    div.indicator.risk3 {border-color: var(--risk3) !important;}
+    div.indicator.risk4 {border-color: var(--risk4) !important;}
+    div.indicator.risk5 {border-color: var(--risk5) !important;}
 
     fieldset { 
       border: 0; 
@@ -220,6 +279,14 @@
       text-align: right; 
       background-color: #cdd;
     }
+    /* Colours scheme for risk is slightly shifted since risk 4 and 5
+       are really the same category */
+    #sec-score.risk0 { background-color: var(--risk1) } /* Low risk */       
+    #sec-score.risk1 { background-color: var(--risk1) } /* Low risk */
+    #sec-score.risk2 { background-color: var(--risk2) } /* Low risk */
+    #sec-score.risk3 { background-color: var(--risk3) } /* Medium risk */
+    #sec-score.risk4 { background-color: var(--risk4) } /* High risk */
+    #sec-score.risk5 { background-color: var(--risk5) } /* High risk */
     #sec-score h2 { text-align: right; }
     #risk-text { font-size: 3em; margin-right: .5em; } 
     #risk-score { font-size: 4em; } 
@@ -231,6 +298,17 @@
       font-size: 0.9em;
       padding: 8px;
     }
+
+    .ui-button.risk1, .ui-button.risk1:hover 
+          { border-bottom: 4px solid var(--risk1); }
+    .ui-button.risk2, .ui-button.risk2:hover 
+          { border-bottom: 4px solid var(--risk2); }
+    .ui-button.risk3, .ui-button.risk3:hover 
+          { border-bottom: 4px solid var(--risk3); }
+    .ui-button.risk4, .ui-button.risk4:hover 
+          { border-bottom: 4px solid var(--risk4); }
+    .ui-button.risk5, .ui-button.risk5:hover 
+          { border-bottom: 4px solid var(--risk5); }
   </style>
 </head>
 <body>
@@ -244,7 +322,6 @@
 
     <section id="sec-score">
       <h2>Risk score</h2>
-      <div id="debug">--</div>
       <span id="risk-text"></span><span class="undefined" id="risk-score">
         XX
       </span> 
@@ -256,11 +333,11 @@
         <div id="subsec-quality">
           <h3>Quality of AI output</h3>
           <fieldset id="ai-mark">
-            Very poor / < 20 / fail | 1
-            Poor – mark 20 – 30 | 2
-            Ok – mark 30 to 49 | 3
-            Good – 40 to 49 | 4
-            Very good – 50+ | 5 
+            Poor < 40  | 1
+            Poor – 40 – 49 | 2
+            Ok – 50 - 59 | 3
+            Good – 60 - 69 | 4
+            Very good – 70+ | 5 
           </fieldset>  
         </div>
 
@@ -270,16 +347,16 @@
             CW: Coursework  | 5
             PJ: Project | 5
             DS: Dissertation  | 5
-            AT: attendance | 1
-            FW: fieldwork  | 3
-            PR: practical  | 1
+            AT: Attendance | 1
+            FW: Fieldwork  | 3
+            PR: Practical  | 1
             EXAM |  1
             HOME EXAM | 5
             TS: Test | 3
             PTS: Paper test | 1
             CTS: Class computer test |  2
             OTS: Online test | 4
-            PT: presentation | 3
+            PT: Presentation | 3
           </fieldset>
         </div>
 
